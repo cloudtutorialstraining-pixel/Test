@@ -1,0 +1,101 @@
+package com.zephyrcreation;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class ScenarioParser {
+
+    public static class Scenario {
+        public String name;
+        public boolean isOutline;
+        public List<String> steps = new ArrayList<>();
+        public List<String> exampleLines = new ArrayList<>();
+        public List<String> tags = new ArrayList<>();
+    }
+
+    public static List<Scenario> parse(String storyKey, String acText) {
+
+        List<Scenario> scenarios = new ArrayList<>();
+
+        if (acText == null || acText.trim().isEmpty()) {
+            return scenarios;
+        }
+
+        Scenario current = null;
+        boolean inExamples = false;
+
+        String[] lines = acText.split("\\r?\\n");
+
+        for (String raw : lines) {
+
+            String line = raw.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+
+            // Ignore Feature line
+            if (line.toLowerCase().startsWith("feature")) {
+                continue;
+            }
+
+            // -------------------------
+            // TAGS (@smoke, @regression)
+            // -------------------------
+            if (line.startsWith("@")) {
+                if (current != null) {
+                    current.tags.add(line);
+                }
+                continue;
+            }
+
+            // -------------------------
+            // SCENARIO / SCENARIO OUTLINE
+            // -------------------------
+            if (line.matches("(?i)^scenario( outline)?\\s*:.*")) {
+
+                current = new Scenario();
+                current.isOutline = line.toLowerCase().contains("outline");
+
+                String title = line
+                        .replaceFirst("(?i)scenario outline", "")
+                        .replaceFirst("(?i)scenario", "")
+                        .replace(":", "")
+                        .trim()
+                        .replaceAll("\\s+", "_");
+
+                current.name = storyKey + "_" + title;
+
+                scenarios.add(current);
+                inExamples = false;
+                continue;
+            }
+
+            // -------------------------
+            // STEPS
+            // -------------------------
+            if (current != null &&
+                    line.matches("(?i)^(given|when|then|and)\\b.*")) {
+
+                current.steps.add(line);
+                continue;
+            }
+
+            // -------------------------
+            // EXAMPLES
+            // -------------------------
+            if (current != null &&
+                    line.toLowerCase().startsWith("examples")) {
+
+                current.isOutline = true;
+                inExamples = true;
+                continue;
+            }
+
+            if (current != null && inExamples && line.startsWith("|")) {
+                current.exampleLines.add(line);
+            }
+        }
+
+        return scenarios;
+    }
+}
