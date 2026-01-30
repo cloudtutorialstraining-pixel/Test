@@ -7,39 +7,39 @@ public class ScenarioParser {
 
     public static class Scenario {
         public String name;
-        public boolean isOutline;
         public List<String> steps = new ArrayList<>();
+        public boolean isOutline;
         public List<String> exampleLines = new ArrayList<>();
     }
 
     private static final Pattern STEP_PATTERN =
             Pattern.compile("(?i)^(given|when|then|and)\\b.*");
 
-    public static List<Scenario> parse(String storyKey, String text) {
+    public static List<Scenario> parse(String storyKey, String acText) {
 
         List<Scenario> scenarios = new ArrayList<>();
-
-        if (text == null || text.trim().isEmpty()) {
+        if (acText == null || acText.isBlank()) {
             return scenarios;
         }
 
         Scenario current = null;
         boolean inExamples = false;
 
-        String[] lines = text.split("\\n");
+        String[] lines = acText.split("\\n");
 
         for (String raw : lines) {
 
-            String line = raw.trim();
+            String line = raw.strip(); // Java 11 safe
             if (line.isEmpty()) continue;
 
             // -----------------------------
             // SCENARIO / OUTLINE
             // -----------------------------
-            if (line.matches("(?i)^scenario( outline)?\\s*:.*")) {
+            if (line.matches("(?i)^scenario outline\\s*:.*")
+                    || line.matches("(?i)^scenario\\s*:.*")) {
 
                 current = new Scenario();
-                current.isOutline = line.toLowerCase().contains("outline");
+                current.isOutline = line.toLowerCase().startsWith("scenario outline");
 
                 String title = line
                         .replaceFirst("(?i)scenario outline", "")
