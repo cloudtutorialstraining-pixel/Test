@@ -1,0 +1,92 @@
+package com.zephyrcreation;
+
+import java.util.*;
+
+public class ScenarioParser {
+
+    public static class Scenario {
+        public String name;
+        public List<String> steps = new ArrayList<>();
+        public boolean isOutline;
+        public List<String> exampleLines = new ArrayList<>();
+    }
+
+    public static List<Scenario> parse(String storyKey, String acText) {
+
+        List<Scenario> scenarios = new ArrayList<>();
+        if (acText == null || acText.trim().isEmpty()) {
+            return scenarios;
+        }
+
+        // Normalize Jira escape characters
+        acText = acText
+                .replace("\\r\\n", "\n")
+                .replace("\\n", "\n")
+                .replace("\r\n", "\n")
+                .replace("\r", "\n");
+
+        Scenario current = null;
+        boolean inExamples = false;
+
+        String[] lines = acText.split("\n");
+
+        for (String raw : lines) {
+
+            String line = raw.trim();
+            if (line.isEmpty()) continue;
+
+            // Ignore Feature / noise lines
+            if (line.toLowerCase().startsWith("feature")) continue;
+            if (line.toLowerCase().startsWith("extracted acceptance")) continue;
+
+            // ----------------------------------
+            // SCENARIO / SCENARIO OUTLINE
+            // ----------------------------------
+            if (line.matches("(?i)^scenario( outline)?\\s*:.*")) {
+
+                current = new Scenario();
+                current.isOutline = line.toLowerCase().contains("outline");
+
+                String title = line
+                        .replaceFirst("(?i)scenario outline", "")
+                        .replaceFirst("(?i)scenario", "")
+                        .replace(":", "")
+                        .trim()
+                        .replaceAll("\\s+", "_");
+
+                current.name = storyKey + "_" + title;
+
+                scenarios.add(current);
+                inExamples = false;
+                continue;
+            }
+
+            // ----------------------------------
+            // STEPS (THIS WAS THE BUG)
+            // ----------------------------------
+            if (current != null &&
+                line.matches("(?i)^(given|when|then|and)\\b.*")) {
+
+                current.steps.add(line);
+                continue;
+            }
+
+            // ----------------------------------
+            // EXAMPLES
+            // ----------------------------------
+            if (current != null &&
+                line.toLowerCase().startsWith("examples")) {
+
+                current.isOutline = true;
+                inExamples = true;
+                continue;
+            }
+
+            if (current != null && inExamples && line.startsWith("|")) {
+                current.exampleLines.add(line);
+            }
+        }
+
+        return scenarios;
+    }
+}
