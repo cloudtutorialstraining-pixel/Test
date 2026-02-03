@@ -1,0 +1,48 @@
+package com.zephyrcreation;
+
+import org.json.JSONObject;
+
+public class ExecutionService {
+
+    /**
+     * Creates a Zephyr execution for a test case inside a cycle
+     *
+     * @param baseUrl   Jira base URL
+     * @param auth      Authorization header
+     * @param projectId Jira project ID (numeric)
+     * @param cycleId   Zephyr cycle ID
+     * @param testId    Jira issue ID (numeric, NOT key)
+     * @return executionId
+     */
+    public String createExecution(
+            String baseUrl,
+            String auth,
+            String projectId,
+            String cycleId,
+            String testId) {
+
+        UiLogger.log("Creating execution for Test ID: " + testId);
+
+        JSONObject payload = new JSONObject();
+        payload.put("projectId", projectId);
+        payload.put("cycleId", cycleId);
+        payload.put("issueId", testId);
+        payload.put("versionId", -1); // -1 = Unscheduled version
+        payload.put("assigneeType", "currentUser");
+
+        String response = JiraRestClient.post(
+                baseUrl,
+                auth,
+                "/rest/zapi/latest/execution",
+                payload.toString()
+        );
+
+        JSONObject json = new JSONObject(response);
+
+        // ZAPI returns execution object keyed by executionId
+        String executionId = json.keys().next();
+
+        UiLogger.log("Execution created successfully. Execution ID: " + executionId);
+        return executionId;
+    }
+}
