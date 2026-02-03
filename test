@@ -1,0 +1,61 @@
+package com.zephyrcreation;
+
+import org.json.JSONObject;
+
+import java.util.Iterator;
+
+public class ZephyrCycleService {
+
+    /**
+     * Find a Zephyr cycle by name.
+     *
+     * @param baseUrl   Jira base URL
+     * @param auth      Authorization header
+     * @param projectId Jira project numeric ID
+     * @param versionId Jira version ID (-1 = Unscheduled)
+     * @param cycleName Cycle name from GUI
+     * @return cycleId if found, otherwise null
+     */
+    public String findCycle(
+            String baseUrl,
+            String auth,
+            String projectId,
+            String versionId,
+            String cycleName) {
+
+        UiLogger.log("Searching for Zephyr cycle: " + cycleName);
+
+        String response = JiraRestClient.get(
+                baseUrl,
+                auth,
+                "/rest/zapi/latest/cycle?projectId=" + projectId +
+                        "&versionId=" + versionId
+        );
+
+        JSONObject cyclesJson = new JSONObject(response);
+
+        Iterator<String> keys = cyclesJson.keys();
+
+        while (keys.hasNext()) {
+            String key = keys.next();
+
+            // Skip metadata keys
+            if ("recordsCount".equalsIgnoreCase(key)) {
+                continue;
+            }
+
+            JSONObject cycle = cyclesJson.getJSONObject(key);
+
+            String name = cycle.optString("name", "");
+
+            if (cycleName.equalsIgnoreCase(name)) {
+                UiLogger.log("Found existing cycle: " + cycleName +
+                        " (ID=" + key + ")");
+                return key; // ✅ cycleId
+            }
+        }
+
+        UiLogger.log("Cycle not found: " + cycleName);
+        return null;
+    }
+}
