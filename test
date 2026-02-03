@@ -174,3 +174,115 @@ public void processUpdate(String jql) {
 
     AuditReporter.writeCsv();
 }
+
+
+private void processSingleIssue(String issueKey) {
+
+    UiLogger.log("Reading Acceptance Criteria for " + issueKey);
+
+    String ac = issueService.getAcceptanceCriteria(
+        baseUrl, authHeader, issueKey);
+
+    List<ScenarioParser.Scenario> scenarios =
+        ScenarioParser.parse(issueKey, ac);
+
+    UiLogger.log("Scenarios parsed: " + scenarios.size());
+
+    boolean valid = GherkinValidator.isValid(issueKey, scenarios);
+    if (!valid) {
+        UiLogger.log("[WARN] Invalid Gherkin, skipping " + issueKey);
+        return;
+    }
+
+    // ---------------------------------------------
+    // 🔁 RESOLVE CYCLE ONCE (OUTSIDE LOOP)
+    // ---------------------------------------------
+    String cycleId = null;
+    String versionId = null;
+
+    if (addToCycle) {
+
+        UiLogger.log("Cycle assignment enabled");
+
+        // Version
+        if (releaseName == null || releaseName.isBlank()) {
+            versionId = "-1"; // Unscheduled
+            UiLogger.log("No release provided → Unscheduled");
+        } else {
+            versionId = issueService.getVersionId(
+                baseUrl, authHeader, projectId, releaseName);
+        }
+
+        // Find or create cycle ONCE
+        cycleId = cycleService.findCycle(
+            baseUrl,
+            authHeader,
+            projectId,
+            versionId,
+            cycleName
+        );
+
+        if (cycleId == null) {
+            cycleId = cycleService.createCycle(
+                baseUrl,
+                authHeader,
+                projectId,
+                versionId,
+                cycleName
+            );
+        }
+
+        UiLogger.log("Using Cycle ID: " + cycleId);
+    }
+
+    // ---------------------------------------------
+    // 🔁 PROCESS SCENARIOS
+    // ---------------------------------------------
+    for (ScenarioParser.Scenario s : scenarios) {
+
+        if (s.steps == null || s.steps.isEmpty()) {
+            UiLogger.log("[WARN] No steps for " + s.name);
+            continue;
+        }
+
+        // CREATE or UPDATE test
+        ZephyrTestService.TestRef ref =
+            zephyrService.createTestCase(
+                baseUrl,
+                authHeader,
+                projectKey,
+                issueKey,
+                s
+            );
+
+        // Link test to story
+        issueService.linkTestToStory(
+            baseUrl,
+            authHeader,
+            issueKey,
+            ref.key
+        );
+
+        // Add steps
+        zephyrService.addSteps(
+            baseUrl,
+            authHeader,
+            ref.id,
+            s.steps
+        );
+
+        // ---------------------------------------------
+        // ✅ ADD TEST TO EXISTING CYCLE
+        // ---------------------------------------------
+        if (addToCycle) {
+            cycleService.assignTestToCycle(
+                baseUrl,
+                authHeader,
+                projectId,
+                versionId,
+                cycleId,
+                ref.key
+            );
+        }
+    }
+}
