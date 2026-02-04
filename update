@@ -1,0 +1,112 @@
+public void processUpdate(String jql) {
+
+    UiLogger.log("Fetching Jira issues for UPDATE...");
+
+    List<String> issueKeys =
+        issueService.fetchIssueKeys(baseUrl, authHeader, jql);
+
+    UiLogger.log("Total Jira stories found: " + issueKeys.size());
+
+    issueKeys.parallelStream().forEach(issueKey -> {
+
+        try {
+            UiLogger.log("Updating tests for: " + issueKey);
+
+            String ac =
+                issueService.getAcceptanceCriteria(
+                    baseUrl, authHeader, issueKey);
+
+            List<ScenarioParser.Scenario> scenarios =
+                ScenarioParser.parse(issueKey, ac);
+
+            if (scenarios.isEmpty()) {
+                UiLogger.log("[WARN] No scenarios found for " + issueKey);
+                return;
+            }
+
+            // ---------------------------------------------
+            // ✅ RESOLVE CYCLE ONCE (NOT PER SCENARIO)
+            // ---------------------------------------------
+            String cycleId = null;
+            String versionId = null;
+
+            if (addToCycle) {
+
+                if (releaseName == null || releaseName.isBlank()) {
+                    versionId = "-1"; // Unscheduled
+                } else {
+                    versionId = issueService.getVersionId(
+                        baseUrl, authHeader, projectId, releaseName);
+                }
+
+                cycleId = cycleService.findCycle(
+                    baseUrl,
+                    authHeader,
+                    projectId,
+                    versionId,
+                    cycleName
+                );
+
+                if (cycleId == null) {
+                    cycleId = cycleService.createCycle(
+                        baseUrl,
+                        authHeader,
+                        projectId,
+                        versionId,
+                        cycleName
+                    );
+                }
+
+                UiLogger.log("Using cycle " + cycleName + " (" + cycleId + ")");
+            }
+
+            // ---------------------------------------------
+            // 🔁 UPDATE EACH SCENARIO
+            // ---------------------------------------------
+            for (ScenarioParser.Scenario s : scenarios) {
+
+                String testKey =
+                    zephyrService.findTestCaseKeyByName(
+                        baseUrl,
+                        authHeader,
+                        projectKey,
+                        s.name
+                    );
+
+                if (testKey == null) {
+                    UiLogger.log("[SKIP] Test not found: " + s.name);
+                    continue;
+                }
+
+                // 1️⃣ Update test content
+                zephyrService.updateTestCase(
+                    baseUrl,
+                    authHeader,
+                    issueKey,
+                    testKey,
+                    String.join("\n", s.steps)
+                );
+
+                // 2️⃣ Optional – add to cycle
+                if (addToCycle) {
+                    cycleService.assignTestToCycle(
+                        baseUrl,
+                        authHeader,
+                        projectId,
+                        versionId,
+                        cycleId,
+                        testKey
+                    );
+                }
+            }
+
+            UiLogger.log("Completed update for: " + issueKey);
+
+        } catch (Exception e) {
+            UiLogger.log("[ERROR] Update failed for " +
+                issueKey + ": " + e.getMessage());
+        }
+    });
+
+    AuditReporter.writeCsv();
+}
