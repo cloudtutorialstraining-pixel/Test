@@ -1,0 +1,43 @@
+public void updateTestCaseWithOptionalLabel(
+        String baseUrl,
+        String auth,
+        String storyKey,
+        String testKey,
+        String newDescription,
+        String labelToAdd) {
+
+    UiLogger.log("Updating Jira Test: " + testKey);
+
+    JSONObject payload = new JSONObject();
+
+    // 1) fields (description)
+    JSONObject fields = new JSONObject();
+    fields.put("description", newDescription);
+    payload.put("fields", fields);
+
+    // 2) update (labels add) ONLY if label is valid
+    if (labelToAdd != null && !labelToAdd.trim().isEmpty()) {
+
+        UiLogger.log("Adding label: " + labelToAdd);
+
+        JSONObject update = new JSONObject();
+        JSONArray labelsArray = new JSONArray();
+
+        JSONObject addLabelObj = new JSONObject();
+        addLabelObj.put("add", labelToAdd.trim());
+
+        labelsArray.put(addLabelObj);
+        update.put("labels", labelsArray);
+
+        payload.put("update", update);
+    }
+
+    JiraRestClient.put(
+            baseUrl,
+            auth,
+            "/rest/api/2/issue/" + testKey,
+            payload.toString()
+    );
+
+    AuditReporter.record(storyKey, testKey, "UPDATE", "SUCCESS");
+}
