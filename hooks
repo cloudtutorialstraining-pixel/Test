@@ -1,0 +1,55 @@
+package hooks;
+
+import io.cucumber.java.*;
+import org.openqa.selenium.OutputType;
+import org.openqa.selenium.TakesScreenshot;
+import utils.DriverFactory;
+import utils.ZephyrService;
+
+import java.util.Optional;
+
+public class Hooks {
+
+    @Before
+    public void beforeScenario() {
+        DriverFactory.initDriver();
+    }
+
+    @AfterStep
+    public void afterStep(Scenario scenario) {
+
+        if (scenario.isFailed()) {
+            try {
+                byte[] screenshot = ((TakesScreenshot) DriverFactory.getDriver())
+                        .getScreenshotAs(OutputType.BYTES);
+
+                // Extent Adapter picks this automatically
+                scenario.attach(screenshot, "image/png", "Failed Step Screenshot");
+
+            } catch (Exception e) {
+                System.out.println("Screenshot failed: " + e.getMessage());
+            }
+        }
+    }
+
+    @After
+    public void afterScenario(Scenario scenario) {
+
+        // Example: @ZEPHYR=ZEPH-101
+        Optional<String> zephyrKey = scenario.getSourceTagNames()
+                .stream()
+                .filter(t -> t.startsWith("@ZEPHYR="))
+                .findFirst();
+
+        if (zephyrKey.isPresent()) {
+
+            String testCaseKey = zephyrKey.get().replace("@ZEPHYR=", "").trim();
+
+            String status = scenario.isFailed() ? "FAIL" : "PASS";
+
+            ZephyrService.updateTestExecution(testCaseKey, status, scenario.getName());
+        }
+
+        DriverFactory.quitDriver();
+    }
+}
