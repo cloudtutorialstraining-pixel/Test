@@ -1,0 +1,44 @@
+public Map<String, String> getLinkedTestsForStory(
+        String baseUrl,
+        String auth,
+        String storyKey) {
+
+    String response = JiraRestClient.get(
+            baseUrl,
+            auth,
+            "/rest/api/2/issue/" + storyKey + "?fields=issuelinks"
+    );
+
+    JSONObject json = new JSONObject(response);
+    JSONArray links = json.getJSONObject("fields").optJSONArray("issuelinks");
+
+    Map<String, String> linkedTestsBySummary = new HashMap<>();
+
+    if (links == null) return linkedTestsBySummary;
+
+    for (int i = 0; i < links.length(); i++) {
+
+        JSONObject link = links.getJSONObject(i);
+
+        // outwardIssue = linked test
+        JSONObject outward = link.optJSONObject("outwardIssue");
+        if (outward == null) continue;
+
+        String testKey = outward.optString("key", null);
+        if (testKey == null) continue;
+
+        // Now fetch summary of test
+        String testResp = JiraRestClient.get(
+                baseUrl,
+                auth,
+                "/rest/api/2/issue/" + testKey + "?fields=summary"
+        );
+
+        JSONObject testJson = new JSONObject(testResp);
+        String summary = testJson.getJSONObject("fields").optString("summary", "");
+
+        linkedTestsBySummary.put(summary.trim(), testKey);
+    }
+
+    return linkedTestsBySummary;
+}
