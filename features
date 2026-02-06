@@ -1,0 +1,303 @@
+package context;
+
+public class ScenarioContext {
+
+    private String tcId;
+    private String executionId;
+    private String reportPath;
+
+    private static ThreadLocal<ScenarioContext> ctx =
+            ThreadLocal.withInitial(ScenarioContext::new);
+
+    public static ScenarioContext get() {
+        return ctx.get();
+    }
+
+    public String getTcId() {
+        return tcId;
+    }
+
+    public void setTcId(String tcId) {
+        this.tcId = tcId;
+    }
+
+    public String getExecutionId() {
+        return executionId;
+    }
+
+    public void setExecutionId(String executionId) {
+        this.executionId = executionId;
+    }
+
+    public String getReportPath() {
+        return reportPath;
+    }
+
+    public void setReportPath(String reportPath) {
+        this.reportPath = reportPath;
+    }
+}
+
+Feature: Sample Regression
+
+  @TC-1001
+  Scenario: Scenario Pass Example
+    Given user does something
+    Then scenario should pass
+
+  @TC-1002
+  Scenario Outline: Scenario Outline Example
+    Given user enters "<country>"
+    Then result should be "<result>"
+
+    Examples:
+      | country | result |
+      | India   | PASS   |
+      | China   | FAIL   |
+
+package config;
+
+import java.io.FileInputStream;
+import java.util.Properties;
+
+public class Config {
+
+    private static final Properties props = new Properties();
+
+    static {
+        try {
+            props.load(new FileInputStream("src/test/resources/config.properties"));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load config.properties", e);
+        }
+    }
+
+    public static String get(String key) {
+        String val = props.getProperty(key);
+        if (val == null) throw new RuntimeException("Missing property: " + key);
+        return val.trim();
+    }
+}
+
+package report;
+
+import com.aventstack.extentreports.*;
+import com.aventstack.extentreports.reporter.ExtentSparkReporter;
+
+public class ExtentScenarioManager {
+
+    private static ThreadLocal<ExtentReports> extent = new ThreadLocal<>();
+    private static ThreadLocal<ExtentTest> test = new ThreadLocal<>();
+
+    public static void startScenario(String scenarioName, String reportPath) {
+
+        ExtentSparkReporter spark = new ExtentSparkReporter(reportPath);
+
+        ExtentReports extentReports = new ExtentReports();
+        extentReports.attachReporter(spark);
+
+        ExtentTest extentTest = extentReports.createTest(scenarioName);
+
+        extent.set(extentReports);
+        test.set(extentTest);
+    }
+
+    public static ExtentTest getTest() {
+        return test.get();
+    }
+
+    public static void endScenario() {
+        if (extent.get() != null) {
+            extent.get().flush();
+        }
+    }
+}
+package report;
+
+import java.io.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+public class ReportZipper {
+
+    public static File zipIfRequired(File file, long maxSizeMB) throws Exception {
+
+        if (!file.exists()) return file;
+
+        if (file.length() < maxSizeMB * 1024 * 1024) {
+            return file;
+        }
+
+        File zipFile = new File(file.getAbsolutePath().replace(".html", ".zip"));
+
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(zipFile));
+             FileInputStream fis = new FileInputStream(file)) {
+
+            zos.putNextEntry(new ZipEntry(file.getName()));
+
+            byte[] buffer = new byte[1024];
+            int len;
+
+            while ((len = fis.read(buffer)) > 0) {
+                zos.write(buffer, 0, len);
+            }
+
+            zos.closeEntry();
+        }
+
+        return zipFile;
+    }
+}
+
+package zephyr;
+
+import config.Config;
+import org.apache.hc.client5.http.classic.methods.HttpPost;
+import org.apache.hc.client5.http.entity.mime.MultipartEntityBuilder;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+
+import java.io.File;
+
+public class ZephyrClient {
+
+    public static void attachToTestCase(String testCaseKey, File file) throws Exception {
+
+        String url = Config.get("jira.url") +
+                "/rest/api/2/issue/" + testCaseKey + "/attachments";
+
+        HttpPost post = new HttpPost(url);
+        post.addHeader("Authorization", Config.get("jira.auth"));
+        post.addHeader("X-Atlassian-Token", "no-check");
+
+        post.setEntity(MultipartEntityBuilder.create()
+                .addBinaryBody("file", file)
+                .build());
+
+        try (CloseableHttpClient client = HttpClients.createDefault()) {
+            client.execute(post, response -> null);
+        }
+    }
+}
+
+package hooks;
+
+import com.aventstack.extentreports.Status;
+import config.Config;
+import context.ScenarioContext;
+import io.cucumber.java.*;
+import report.ExtentScenarioManager;
+import report.ReportZipper;
+import zephyr.ZephyrClient;
+
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.UUID;
+
+public class CucumberHooks {
+
+    @Before
+    public void beforeScenario(Scenario scenario) {
+
+        String tcId = scenario.getSourceTagNames()
+                .stream()
+                .filter(t -> t.startsWith("@TC-"))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Missing @TC-xxxx tag"))
+                .replace("@", "");
+
+        String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+        String time = new SimpleDateFormat("HH-mm-ss").format(new Date());
+        String unique = UUID.randomUUID().toString().substring(0, 6);
+
+        String reportPath = Config.get("extent.base.path")
+                + "/" + date + "/" + tcId + "_" + time + "_" + unique + ".html";
+
+        new File(reportPath).getParentFile().mkdirs();
+
+        ScenarioContext.get().setTcId(tcId);
+        ScenarioContext.get().setReportPath(reportPath);
+
+        ExtentScenarioManager.startScenario(scenario.getName(), reportPath);
+        ExtentScenarioManager.getTest().log(Status.INFO, "Scenario Started");
+    }
+
+    @After
+    public void afterScenario(Scenario scenario) throws Exception {
+
+        boolean failed = scenario.isFailed();
+
+        ExtentScenarioManager.getTest()
+                .log(failed ? Status.FAIL : Status.PASS,
+                        "Scenario Finished: " + scenario.getStatus());
+
+        ExtentScenarioManager.endScenario();
+
+        File reportFile = new File(ScenarioContext.get().getReportPath());
+
+        long maxSize = Long.parseLong(Config.get("extent.max.upload.size.mb"));
+        File uploadFile = ReportZipper.zipIfRequired(reportFile, maxSize);
+
+        // Upload report to Zephyr Test Case ID
+        ZephyrClient.attachToTestCase(
+                ScenarioContext.get().getTcId(),
+                uploadFile
+        );
+    }
+}
+
+package steps;
+
+import io.cucumber.java.en.*;
+import report.ExtentScenarioManager;
+
+public class SampleSteps {
+
+    @Given("user does something")
+    public void user_does_something() {
+        ExtentScenarioManager.getTest().info("User does something");
+    }
+
+    @Then("scenario should pass")
+    public void scenario_should_pass() {
+        ExtentScenarioManager.getTest().pass("Scenario passed successfully");
+    }
+
+    @Given("user enters {string}")
+    public void user_enters_country(String country) {
+        ExtentScenarioManager.getTest().info("User entered country: " + country);
+    }
+
+    @Then("result should be {string}")
+    public void result_should_be(String result) {
+        ExtentScenarioManager.getTest().info("Expected result: " + result);
+
+        if ("FAIL".equalsIgnoreCase(result)) {
+            ExtentScenarioManager.getTest().fail("Forcing failure for demo");
+            throw new RuntimeException("Forced failure for demo");
+        }
+
+        ExtentScenarioManager.getTest().pass("Result matched");
+    }
+}
+
+package runner;
+
+import io.cucumber.junit.*;
+import org.junit.runner.RunWith;
+
+@RunWith(Cucumber.class)
+@CucumberOptions(
+        features = "src/test/resources/features",
+        glue = {"steps", "hooks"},
+        plugin = {"pretty"},
+        monochrome = true
+)
+public class TestRunner {
+}
+
+
+
+
+
