@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<extentreports>
+    <configuration>
+        <theme>dark</theme>
+
+        <encoding>UTF-8</encoding>
+
+        <protocol>https</protocol>
+
+        <documentTitle>Automation Report</documentTitle>
+
+        <reportName>Regression Test Results</reportName>
+
+        <timeStampFormat>MMM dd, yyyy HH:mm:ss</timeStampFormat>
+
+        <testViewChartLocation>top</testViewChartLocation>
+
+        <scripts>
+            <![CDATA[
+                /* Example: Change the logo or add custom behavior */
+                /* $(document).ready(function() { ... }); */
+            ]]>
+        </scripts>
+
+        <styles>
+            <![CDATA[
+                /* Example: Tweak font sizes or colors */
+                .badge { font-size: 10px; }
+            ]]>
+        </styles>
+    </configuration>
+</extentreports>
