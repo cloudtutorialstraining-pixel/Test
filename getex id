@@ -1,0 +1,59 @@
+public String getExecutionIdSimple(String zephyrTestId,
+                                   String folderName,
+                                   String testCycle,
+                                   String versionName) {
+
+    logger.info("Getting executionId using single API call (simple way)");
+
+    String url = Config.JIRA_URL
+            + "/rest/zapi/latest/traceability/executionsByTest?testIdOrKey="
+            + zephyrTestId;
+
+    try (CloseableHttpClient httpclient = HttpClients.createDefault()) {
+
+        HttpGet httpget = new HttpGet(url);
+        httpget.setHeader("Accept", "application/json");
+        httpget.setHeader("Content-type", "application/json");
+        httpget.setHeader("Authorization", "Bearer " + Config.JIRA_AUTH);
+
+        ResponseHandler<String> responseHandler = response -> {
+            int status = response.getStatusLine().getStatusCode();
+
+            if (status < 200 || status >= 300) {
+                throw new ClientProtocolException("Unexpected response status: " + status);
+            }
+
+            String resultString = EntityUtils.toString(response.getEntity());
+            JSONObject result = new JSONObject(resultString);
+
+            JSONArray executions = result.optJSONArray("executions");
+            if (executions == null) return "";
+
+            for (int i = 0; i < executions.length(); i++) {
+
+                // In your response it is: executions[i].execution
+                JSONObject exec = executions.getJSONObject(i).optJSONObject("execution");
+                if (exec == null) continue;
+
+                String respFolder = exec.optString("folderName", "");
+                String respCycle = exec.optString("testCycle", "");
+                String respVersion = exec.optString("versionName", "");
+
+                if (respFolder.equals(folderName)
+                        && respCycle.equals(testCycle)
+                        && respVersion.equals(versionName)) {
+
+                    return exec.optString("id", "");
+                }
+            }
+
+            return "";
+        };
+
+        return httpclient.execute(httpget, responseHandler);
+
+    } catch (Exception e) {
+        System.out.println(e.getMessage());
+        return "";
+    }
+}
