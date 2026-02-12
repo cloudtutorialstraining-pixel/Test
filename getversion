@@ -1,0 +1,52 @@
+package com.zephyrcreation;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+public class JiraIssueService {
+
+    // --------------------------------------------------------
+    // Get Version ID by Version Name
+    // Example:
+    // versionName = "Release 1"
+    // returns something like "12345"
+    //
+    // If not found -> returns "-1" (Unscheduled)
+    // --------------------------------------------------------
+    public String getVersionIdByName(
+            String baseUrl,
+            String auth,
+            String projectKey,
+            String versionName) {
+
+        // If user did not give release name → Unscheduled
+        if (versionName == null || versionName.isBlank()) {
+            return "-1";
+        }
+
+        String response = JiraRestClient.get(
+                baseUrl,
+                auth,
+                "/rest/api/2/project/" + projectKey + "/versions"
+        );
+
+        JSONArray versions = new JSONArray(response);
+
+        for (int i = 0; i < versions.length(); i++) {
+            JSONObject v = versions.getJSONObject(i);
+
+            String name = v.optString("name", "");
+            String id = v.optString("id", "");
+
+            if (name.equalsIgnoreCase(versionName.trim())) {
+                UiLogger.log("Version found: " + name + " -> ID = " + id);
+                return id;
+            }
+        }
+
+        UiLogger.log("[WARN] Version not found: " + versionName +
+                " , using Unscheduled (-1)");
+
+        return "-1";
+    }
+}
