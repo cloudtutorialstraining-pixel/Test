@@ -1,0 +1,179 @@
+# 🤖 Zephyr Automation – Agent Mode Control File
+
+## 🎯 Purpose
+This file defines the execution configuration for Zephyr Automation Framework.
+It replaces the Swing GUI and allows GitHub Copilot Agent Mode to execute
+Create / Update workflows using structured inputs.
+
+---
+
+# ================================
+# 🧾 INPUT CONFIGURATION
+# ================================
+
+## 🔍 Jira Query
+JQL=project = test AND issuetype = Story
+
+## ⚙️ Operation Mode
+# Allowed Values: CREATE | UPDATE | REPAIR
+OPERATION=CREATE
+
+## 🏷 Optional Label (for Test Cases)
+LABEL=release-1
+
+## 🔁 Add Test Cases To Cycle
+ADD_TO_CYCLE=true
+
+## 🚀 Release (Version Name)
+# If empty → versionId = -1 (Unscheduled)
+RELEASE_NAME=Sprint-12
+
+## 🔄 Cycle Name
+CYCLE_NAME=Regression-Cycle
+
+## 📁 Folder Name (Optional)
+# If provided and not existing → create folder
+FOLDER_NAME=Build-24
+
+## 🧪 Execution Status Update (Optional)
+# Allowed: PASS | FAIL | WIP | BLOCKED | NONE
+EXECUTION_STATUS=NONE
+
+---
+
+# ================================
+# 🧠 AGENT EXECUTION INSTRUCTIONS
+# ================================
+
+Agent must:
+
+1. Validate JQL query
+2. Fetch stories using Jira REST API
+3. Parse Acceptance Criteria into Scenarios
+4. For each Scenario:
+
+   IF OPERATION=CREATE:
+     - Check linked tests using getLinkedTestsBySummary()
+     - Create missing test cases
+     - Prevent duplicates
+     - Link test to story
+
+   IF OPERATION=UPDATE:
+     - Fetch linked tests using single JQL
+     - Update test steps
+     - Add missing tests if not found
+
+   IF OPERATION=REPAIR:
+     - Detect:
+         • Tests not created
+         • Tests not linked
+         • Tests not in cycle
+     - Fix only missing items
+
+5. If ADD_TO_CYCLE=true:
+     - Resolve versionId using RELEASE_NAME
+     - If version empty → use -1
+     - Find cycle by name
+     - If cycle missing → create cycle
+     - If folder provided → create/find folder
+     - Add tests to cycle
+     - Create execution automatically
+
+6. If EXECUTION_STATUS ≠ NONE:
+     - Update execution status
+
+7. Generate Summary Report:
+     - Total stories processed
+     - Total tests created
+     - Total tests updated
+     - Total tests skipped
+     - Total failures
+     - Retry attempts
+
+8. Generate Audit CSV
+
+---
+
+# ================================
+# 🛡 SAFETY RULES
+# ================================
+
+- Never create duplicate tests
+- Use Map<Summary, TestKey> to prevent recreation
+- Retry API failures (429 / 5xx)
+- Use exponential backoff for rate limits
+- Do not recreate cycle if already exists
+- Do not recreate folder if already exists
+- Idempotent execution on re-run
+
+---
+
+# ================================
+# 🏗 EXPECTED SERVICES USED
+# ================================
+
+- JiraIssueService
+- ZephyrTestService
+- ZephyrCycleService
+- ZephyrExecutionService
+- ScenarioParser
+
+---
+
+# ================================
+# 🚀 HOW TO EXECUTE (Agent Mode)
+# ================================
+
+1. Open this repository in VS Code
+2. Enable GitHub Copilot Agent Mode
+3. In chat type:
+
+   👉 "Execute agent-mode-zephyr.md"
+
+4. Agent should:
+   - Read inputs
+   - Inject into ZephyrCreatorTest
+   - Run processCreate/processUpdate
+   - Display summary
+
+---
+
+# ================================
+# 📊 SAMPLE SUMMARY OUTPUT
+# ================================
+
+Stories Processed: 5
+Tests Created: 8
+Tests Updated: 3
+Tests Skipped: 2
+Failures: 0
+Cycle Assigned: Regression-Cycle
+Release Used: Sprint-12
+Execution Created: Yes
+
+---
+
+# ================================
+# 🔄 CI/CD EXTENSION (Optional)
+# ================================
+
+This file can be parsed by:
+
+- Azure DevOps
+- GitHub Actions
+- Jenkins
+
+By converting inputs into CLI parameters.
+
+Example:
+
+java -jar zephyr-automation.jar \
+  --jql="project=WCLCARAPI" \
+  --operation=CREATE \
+  --cycle="Regression-Cycle" \
+  --release="Sprint-12" \
+  --addToCycle=true
+
+---
+
+# ✅ END OF CONFIG
