@@ -1,0 +1,73 @@
+package com.zephyrcreation;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.util.List;
+
+public class JiraSubTaskService {
+
+    /**
+     * Creates a subtask under a given Jira story and adds scenarios in {code} block.
+     */
+    public String createSubTaskWithScenarios(
+            String baseUrl,
+            String authHeader,
+            String projectKey,
+            String parentStoryKey,
+            String subTaskSummary,
+            List<String> scenarios) {
+
+        UiLogger.log("Creating subtask under story: " + parentStoryKey);
+
+        // ------------------------------------------------
+        // Format scenarios inside {code} block
+        // ------------------------------------------------
+        StringBuilder descriptionBuilder = new StringBuilder();
+        descriptionBuilder.append("Scenarios extracted from Acceptance Criteria\n\n");
+        descriptionBuilder.append("{code}\n");
+
+        for (String scenario : scenarios) {
+            descriptionBuilder.append(scenario).append("\n\n");
+        }
+
+        descriptionBuilder.append("{code}");
+
+        String description = descriptionBuilder.toString();
+
+        // ------------------------------------------------
+        // Prepare Jira payload
+        // ------------------------------------------------
+        JSONObject fields = new JSONObject();
+
+        fields.put("project", new JSONObject().put("key", projectKey));
+
+        fields.put("parent", new JSONObject().put("key", parentStoryKey));
+
+        fields.put("summary", subTaskSummary);
+
+        fields.put("description", description);
+
+        fields.put("issuetype", new JSONObject().put("name", "Sub-task"));
+
+        JSONObject payload = new JSONObject();
+        payload.put("fields", fields);
+
+        // ------------------------------------------------
+        // Call Jira API
+        // ------------------------------------------------
+        String response = JiraRestClient.post(
+                baseUrl,
+                authHeader,
+                "/rest/api/2/issue",
+                payload.toString()
+        );
+
+        JSONObject json = new JSONObject(response);
+        String subTaskKey = json.getString("key");
+
+        UiLogger.log("Subtask created: " + subTaskKey);
+
+        return subTaskKey;
+    }
+}
