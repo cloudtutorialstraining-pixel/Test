@@ -1,73 +1,150 @@
-package com.zephyrcreation;
+package com.zephyrcreation.service;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class JiraSubTaskService {
 
     /**
-     * Creates a subtask under a given Jira story and adds scenarios in {code} block.
+     * Create or Update Subtask
      */
-    public String createSubTaskWithScenarios(
+    public String createOrUpdateSubTask(
             String baseUrl,
             String authHeader,
-            String projectKey,
-            String parentStoryKey,
-            String subTaskSummary,
-            List<String> scenarios) {
+            String storyKey,
+            String summary,
+            String scenariosText) {
 
-        UiLogger.log("Creating subtask under story: " + parentStoryKey);
+        try {
 
-        // ------------------------------------------------
-        // Format scenarios inside {code} block
-        // ------------------------------------------------
-        StringBuilder descriptionBuilder = new StringBuilder();
-        descriptionBuilder.append("Scenarios extracted from Acceptance Criteria\n\n");
-        descriptionBuilder.append("{code}\n");
+            Map<String,String> existingSubtasks =
+                    getSubTasksForStory(baseUrl, authHeader, storyKey);
 
-        for (String scenario : scenarios) {
-            descriptionBuilder.append(scenario).append("\n\n");
+            String description =
+                    "Generated BDD Scenarios\n\n{code}\n"
+                            + scenariosText +
+                            "\n{code}";
+
+            // Subtask already exists → UPDATE
+            if(existingSubtasks.containsKey(summary)) {
+
+                String subTaskKey = existingSubtasks.get(summary);
+
+                updateSubTask(baseUrl, authHeader, subTaskKey, description);
+
+                UiLogger.log("Updated existing subtask: " + subTaskKey);
+
+                return subTaskKey;
+            }
+
+            // Subtask does not exist → CREATE
+            JSONObject fields = new JSONObject();
+
+            fields.put("summary", summary);
+            fields.put("description", description);
+
+            fields.put("issuetype",
+                    new JSONObject().put("name","Sub-task"));
+
+            fields.put("parent",
+                    new JSONObject().put("key",storyKey));
+
+            JSONObject payload = new JSONObject();
+            payload.put("fields", fields);
+
+            String response = JiraRestClient.post(
+                    baseUrl,
+                    authHeader,
+                    "/rest/api/2/issue",
+                    payload.toString()
+            );
+
+            JSONObject json = new JSONObject(response);
+
+            String newKey = json.getString("key");
+
+            UiLogger.log("Created new subtask: " + newKey);
+
+            return newKey;
+
+        } catch(Exception e) {
+
+            throw new RuntimeException(
+                    "Failed create/update subtask: " + e.getMessage());
         }
+    }
 
-        descriptionBuilder.append("{code}");
+    /**
+     * Update subtask description
+     */
+    private void updateSubTask(
+            String baseUrl,
+            String authHeader,
+            String subTaskKey,
+            String description) {
 
-        String description = descriptionBuilder.toString();
-
-        // ------------------------------------------------
-        // Prepare Jira payload
-        // ------------------------------------------------
         JSONObject fields = new JSONObject();
 
-        fields.put("project", new JSONObject().put("key", projectKey));
-
-        fields.put("parent", new JSONObject().put("key", parentStoryKey));
-
-        fields.put("summary", subTaskSummary);
-
         fields.put("description", description);
-
-        fields.put("issuetype", new JSONObject().put("name", "Sub-task"));
 
         JSONObject payload = new JSONObject();
         payload.put("fields", fields);
 
-        // ------------------------------------------------
-        // Call Jira API
-        // ------------------------------------------------
-        String response = JiraRestClient.post(
+        JiraRestClient.put(
                 baseUrl,
                 authHeader,
-                "/rest/api/2/issue",
+                "/rest/api/2/issue/" + subTaskKey,
                 payload.toString()
+        );
+    }
+
+    /**
+     * Fetch subtasks under story
+     */
+    private Map<String,String> getSubTasksForStory(
+            String baseUrl,
+            String authHeader,
+            String storyKey) {
+
+        Map<String,String> subTasks = new HashMap<>();
+
+        String response = JiraRestClient.get(
+                baseUrl,
+                authHeader,
+                "/rest/api/2/issue/" + storyKey + "?fields=subtasks"
         );
 
         JSONObject json = new JSONObject(response);
-        String subTaskKey = json.getString("key");
 
-        UiLogger.log("Subtask created: " + subTaskKey);
+        JSONArray subtasks =
+                json.getJSONObject("fields").optJSONArray("subtasks");
 
-        return subTaskKey;
+        if(subtasks == null) return subTasks;
+
+        for(int i=0;i<subtasks.length();i++) {
+
+            JSONObject sub = subtasks.getJSONObject(i);
+
+            String key = sub.getString("key");
+
+            String subResp = JiraRestClient.get(
+                    baseUrl,
+                    authHeader,
+                    "/rest/api/2/issue/" + key + "?fields=summary"
+            );
+
+            JSONObject subJson = new JSONObject(subResp);
+
+            String summary =
+                    subJson.getJSONObject("fields")
+                            .optString("summary");
+
+            subTasks.put(summary,key);
+        }
+
+        return subTasks;
     }
 }
